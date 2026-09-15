@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "571358755927",
+    "project_id": "jay-bhole-goshala-samiti",
+    "storage_bucket": "jay-bhole-goshala-samiti.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:571358755927:android:6bf13ad0ce252aa66df712",
+        "android_client_info": {
+          "package_name": "com.example.jay_bhole_goshala"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBIelWz5iRYlK53MuZGidbBgmPrLnkzKpM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
