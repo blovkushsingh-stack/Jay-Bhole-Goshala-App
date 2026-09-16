@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'branding/brand_config.dart';
 import 'models/cow_record.dart';
+import 'models/feed_item.dart';
 import 'services/goshala_cloud_repository.dart';
 import 'services/local_storage_service.dart';
 
@@ -97,10 +100,52 @@ class LocalGoshalaStore extends ChangeNotifier {
 
   LocalStorageService? _storage;
   final _cloud = GoshalaCloudRepository();
+  StreamSubscription<List<CowRecord>>? _cowsSubscription;
+  StreamSubscription<List<FeedItem>>? _feedStockSubscription;
+  StreamSubscription<List<FeedTransaction>>? _feedTransactionsSubscription;
   bool initialized = false;
 
   final committee = const CommitteeConfig();
   final cows = <CowRecord>[];
+  final feedStock = <FeedItem>[
+    FeedItem(
+      id: 'FEED-BHUSA',
+      name: 'सूखा भूसा (Dry Fodder)',
+      category: FeedCategory.dryFodder,
+      currentStock: 450.0,
+      unit: 'kg',
+      minimumThreshold: 100.0,
+      costPerUnit: 12.0,
+    ),
+    FeedItem(
+      id: 'FEED-GREEN',
+      name: 'हरा चारा (Green Fodder)',
+      category: FeedCategory.greenFodder,
+      currentStock: 300.0,
+      unit: 'kg',
+      minimumThreshold: 80.0,
+      costPerUnit: 4.0,
+    ),
+    FeedItem(
+      id: 'FEED-DANA',
+      name: 'पशु आहार / दाना (Concentrate)',
+      category: FeedCategory.concentrate,
+      currentStock: 120.0,
+      unit: 'kg',
+      minimumThreshold: 40.0,
+      costPerUnit: 28.0,
+    ),
+    FeedItem(
+      id: 'FEED-MINERAL',
+      name: 'मिनरल मिक्स / सप्लीमेंट',
+      category: FeedCategory.mineral,
+      currentStock: 25.0,
+      unit: 'kg',
+      minimumThreshold: 10.0,
+      costPerUnit: 65.0,
+    ),
+  ];
+  final feedTransactions = <FeedTransaction>[];
   final volunteers = <VolunteerRecord>[
     VolunteerRecord(
       name: 'रमेश शर्मा',
@@ -202,6 +247,11 @@ class LocalGoshalaStore extends ChangeNotifier {
       .fold(0, (sum, entry) => sum + entry.amount);
   int get completedChecklist => checklist.values.where((value) => value).length;
 
+  double get totalFeedStockKg =>
+      feedStock.fold(0.0, (sum, item) => sum + item.currentStock);
+  int get lowStockFeedCount =>
+      feedStock.where((item) => item.isLowStock).length;
+
   Future<void> initialize() async {
     _storage = await LocalStorageService.create();
     cows
@@ -209,6 +259,74 @@ class LocalGoshalaStore extends ChangeNotifier {
       ..addAll(_storage!.loadCows());
     initialized = true;
     notifyListeners();
+    _startRealtimeSync();
+  }
+
+  void _startRealtimeSync() {
+    if (!_cloud.canSync) return;
+
+    _cowsSubscription ??= _cloud.watchCows().listen(
+      (cloudCows) {
+        if (cloudCows.isNotEmpty || cows.isNotEmpty) {
+          cows
+            ..clear()
+            ..addAll(cloudCows);
+          _saveCows();
+          notifyListeners();
+        }
+      },
+      onError: (error) {
+        debugPrint('LocalGoshalaStore realtime cows sync error: $error');
+      },
+    );
+
+    _feedStockSubscription ??= _cloud.watchFeedStock().listen(
+      (cloudFeed) {
+        if (cloudFeed.isNotEmpty) {
+          feedStock
+            ..clear()
+            ..addAll(cloudFeed);
+          notifyListeners();
+        }
+      },
+      onError: (error) {
+        debugPrint('LocalGoshalaStore realtime feed stock sync error: $error');
+      },
+    );
+
+    _feedTransactionsSubscription ??= _cloud.watchFeedTransactions().listen(
+      (cloudTxs) {
+        if (cloudTxs.isNotEmpty) {
+          feedTransactions
+            ..clear()
+            ..addAll(cloudTxs);
+          notifyListeners();
+        }
+      },
+      onError: (error) {
+        debugPrint(
+          'LocalGoshalaStore realtime feed transactions sync error: $error',
+        );
+      },
+    );
+  }
+
+  void refreshRealtimeListeners() {
+    _cowsSubscription?.cancel();
+    _cowsSubscription = null;
+    _feedStockSubscription?.cancel();
+    _feedStockSubscription = null;
+    _feedTransactionsSubscription?.cancel();
+    _feedTransactionsSubscription = null;
+    _startRealtimeSync();
+  }
+
+  @override
+  void dispose() {
+    _cowsSubscription?.cancel();
+    _feedStockSubscription?.cancel();
+    _feedTransactionsSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> syncLocalDataToCloud() async {
@@ -252,6 +370,9 @@ class LocalGoshalaStore extends ChangeNotifier {
         },
       );
     }
+    for (final feed in feedStock) {
+      await _cloud.saveFeedItem(feed);
+    }
     await _cloud.saveRecord(
       collection: 'goshala',
       id: 'profile',
@@ -289,6 +410,106 @@ class LocalGoshalaStore extends ChangeNotifier {
 
   Future<void> _saveCows() async {
     await _storage?.saveCows(cows);
+  }
+
+  // -------------------------------------------------------------
+  // Feed & Stock Operations
+  // -------------------------------------------------------------
+
+  Future<void> saveFeedItem(FeedItem item) async {
+    final index = feedStock.indexWhere((f) => f.id == item.id);
+    if (index >= 0) {
+      feedStock[index] = item;
+    } else {
+      feedStock.add(item);
+    }
+    await _cloud.saveFeedItem(item);
+    notifyListeners();
+  }
+
+  Future<void> deleteFeedItem(String id) async {
+    feedStock.removeWhere((f) => f.id == id);
+    await _cloud.deleteFeedItem(id);
+    notifyListeners();
+  }
+
+  Future<void> logFeedConsumption({
+    required String feedItemId,
+    required double consumedQty,
+    String notes = '',
+    String recordedBy = 'कर्मचारी',
+  }) async {
+    final index = feedStock.indexWhere((f) => f.id == feedItemId);
+    if (index == -1) return;
+
+    final current = feedStock[index];
+    final updatedStock = (current.currentStock - consumedQty).clamp(
+      0.0,
+      999999.0,
+    );
+    final updatedFeed = current.copyWith(
+      currentStock: updatedStock,
+      updatedAt: DateTime.now(),
+    );
+
+    feedStock[index] = updatedFeed;
+
+    final tx = FeedTransaction(
+      id: 'TX-${DateTime.now().millisecondsSinceEpoch}',
+      feedItemId: feedItemId,
+      feedName: current.name,
+      type: FeedTransactionType.consumption,
+      quantity: consumedQty,
+      unit: current.unit,
+      notes: notes,
+      recordedBy: recordedBy,
+      date: DateTime.now(),
+    );
+
+    feedTransactions.insert(0, tx);
+    await _cloud.logFeedTransaction(tx, updatedStock: updatedStock);
+    notifyListeners();
+  }
+
+  Future<void> logFeedPurchaseOrDonation({
+    required String feedItemId,
+    required double addedQty,
+    required FeedTransactionType type,
+    double totalCost = 0.0,
+    String donorName = '',
+    String notes = '',
+    String recordedBy = 'व्यवस्थापक',
+  }) async {
+    final index = feedStock.indexWhere((f) => f.id == feedItemId);
+    if (index == -1) return;
+
+    final current = feedStock[index];
+    final updatedStock = current.currentStock + addedQty;
+    final updatedFeed = current.copyWith(
+      currentStock: updatedStock,
+      lastRestockedDate: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
+    feedStock[index] = updatedFeed;
+
+    final tx = FeedTransaction(
+      id: 'TX-${DateTime.now().millisecondsSinceEpoch}',
+      feedItemId: feedItemId,
+      feedName: current.name,
+      type: type,
+      quantity: addedQty,
+      unit: current.unit,
+      totalCost: totalCost,
+      donorName: donorName,
+      notes: notes,
+      recordedBy: recordedBy,
+      date: DateTime.now(),
+    );
+
+    feedTransactions.insert(0, tx);
+    await _cloud.logFeedTransaction(tx, updatedStock: updatedStock);
+    notifyListeners();
   }
 
   void toggleChecklist(String key) {

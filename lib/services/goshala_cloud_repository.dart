@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/cow_record.dart';
+import '../models/feed_item.dart';
 import 'firebase_backend.dart';
 
 class GoshalaCloudRepository {
@@ -84,4 +85,88 @@ class GoshalaCloudRepository {
   }) => saveRecord(collection: 'cows', id: id, data: data);
 
   Future<void> deleteCow(String id) => deleteRecord(collection: 'cows', id: id);
+
+  // -------------------------------------------------------------
+  // Feed Stock & Inventory Methods
+  // -------------------------------------------------------------
+
+  Future<List<FeedItem>> fetchFeedStock() async {
+    if (!canSync) return const <FeedItem>[];
+    final snapshot = await _backend.firestore
+        .collection('feedStock')
+        .orderBy('name')
+        .get();
+    return snapshot.docs
+        .map((doc) => FeedItem.fromJson(doc.data(), docId: doc.id))
+        .toList();
+  }
+
+  Stream<List<FeedItem>> watchFeedStock() {
+    if (!canSync) return const Stream.empty();
+    return _backend.firestore
+        .collection('feedStock')
+        .orderBy('name')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => FeedItem.fromJson(doc.data(), docId: doc.id))
+              .toList(),
+        );
+  }
+
+  Future<void> saveFeedItem(FeedItem item) =>
+      saveRecord(collection: 'feedStock', id: item.id, data: item.toJson());
+
+  Future<void> deleteFeedItem(String id) =>
+      deleteRecord(collection: 'feedStock', id: id);
+
+  // -------------------------------------------------------------
+  // Feed Transactions (Consumption, Purchase, Donation)
+  // -------------------------------------------------------------
+
+  Future<List<FeedTransaction>> fetchFeedTransactions({int limit = 50}) async {
+    if (!canSync) return const <FeedTransaction>[];
+    final snapshot = await _backend.firestore
+        .collection('feedTransactions')
+        .orderBy('date', descending: true)
+        .limit(limit)
+        .get();
+    return snapshot.docs
+        .map((doc) => FeedTransaction.fromJson(doc.data(), docId: doc.id))
+        .toList();
+  }
+
+  Stream<List<FeedTransaction>> watchFeedTransactions({int limit = 50}) {
+    if (!canSync) return const Stream.empty();
+    return _backend.firestore
+        .collection('feedTransactions')
+        .orderBy('date', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => FeedTransaction.fromJson(doc.data(), docId: doc.id))
+              .toList(),
+        );
+  }
+
+  Future<void> logFeedTransaction(
+    FeedTransaction tx, {
+    required double updatedStock,
+  }) async {
+    if (!canSync) return;
+    await saveRecord(
+      collection: 'feedTransactions',
+      id: tx.id,
+      data: tx.toJson(),
+    );
+    // Update the parent feed stock quantity
+    await _backend.firestore.collection('feedStock').doc(tx.feedItemId).set({
+      'currentStock': updatedStock,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'lastRestockedDate': tx.isPurchase || tx.isDonation
+          ? FieldValue.serverTimestamp()
+          : null,
+    }, SetOptions(merge: true));
+  }
 }

@@ -8,36 +8,56 @@ service cloud.firestore {
 
     function isAdmin() {
       return signedIn() &&
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin';
+        (
+          (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin') ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive != false)
+        );
     }
 
-    function isOwner() {
-      return signedIn() && resource.data.ownerId == request.auth.uid;
+    function isStaff() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive != false;
+    }
+
+    function isStaffOrAdmin() {
+      return isAdmin() || isStaff();
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
     }
 
     match /admins/{userId} {
-      allow read: if signedIn() && request.auth.uid == userId;
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
       allow write: if false;
     }
 
     match /users/{userId} {
       allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
-      allow create: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn() && request.auth.uid == userId &&
+        (isAdmin() || request.resource.data.role == 'viewer' || !('role' in request.resource.data));
       allow update: if isAdmin() ||
         (signedIn() && request.auth.uid == userId &&
-          request.resource.data.role == resource.data.role);
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.isActive == resource.data.isActive);
       allow delete: if isAdmin();
     }
 
     match /staff/{staffId} {
       allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isStaffOrAdmin();
     }
 
     match /cows/{cowId} {
       allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
     }
 
     match /donations/{recordId} {
@@ -48,12 +68,14 @@ service cloud.firestore {
 
     match /expenses/{recordId} {
       allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
     }
 
     match /volunteers/{recordId} {
       allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
     }
 
     match /products/{recordId} {
@@ -68,12 +90,14 @@ service cloud.firestore {
 
     match /healthRecords/{recordId} {
       allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
     }
 
     match /serviceRecords/{recordId} {
       allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isStaffOrAdmin();
+      allow delete: if isAdmin();
     }
 
     match /{document=**} {

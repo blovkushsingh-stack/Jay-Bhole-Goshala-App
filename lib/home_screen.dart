@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'app_data.dart';
 import 'branding/brand_config.dart';
+import 'models/app_user.dart';
 import 'screens.dart';
 import 'screens/cows_screen.dart';
 import 'screens/ai_assistant_screen.dart';
+import 'services/firebase_backend.dart';
 import 'widgets/brand_logo.dart';
 
 const _forest = Color(0xFF2F6B45);
@@ -554,60 +556,118 @@ class _WelcomeStatusCard extends StatelessWidget {
       store.checklist['चिकित्सा'] == true ? 'Completed' : 'Pending',
     ].where((status) => status == 'Pending').length;
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE7ECE4)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'आज की गौसेवा स्थिति',
-                  style: TextStyle(
-                    color: _ink,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  pendingTasks == 0
-                      ? 'आज की सभी सेवा गतिविधियाँ पूर्ण हैं।'
-                      : 'आज $pendingTasks कार्य अभी लंबित हैं।',
-                  style: const TextStyle(color: _muted, fontSize: 13),
-                ),
-              ],
-            ),
+    return StreamBuilder<AppUser?>(
+      stream: FirebaseBackend.instance.userProfileChanges(),
+      builder: (context, snapshot) {
+        final profile = snapshot.data;
+        final role = profile?.role ?? UserRole.viewer;
+        final isLoggedIn = profile != null;
+
+        return Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFE7ECE4)),
           ),
-          const SizedBox(width: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: _leaf,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.check_circle_outline, color: _forest),
-                const SizedBox(width: 8),
-                Text(
-                  '${store.completedChecklist}/4',
-                  style: const TextStyle(
-                    color: _forest,
-                    fontWeight: FontWeight.w800,
-                  ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (isLoggedIn) ...[
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: role.isAdmin
+                            ? _leaf
+                            : (role.isStaff
+                                  ? const Color(0xFFFFF1DC)
+                                  : const Color(0xFFEAEAEA)),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'लॉगिन: ${role.label}',
+                        style: TextStyle(
+                          color: role.isAdmin
+                              ? _forest
+                              : (role.isStaff ? _saffron : _ink),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      profile.name,
+                      style: const TextStyle(
+                        color: _muted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 10),
               ],
-            ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'आज की गौसेवा स्थिति',
+                          style: TextStyle(
+                            color: _ink,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          pendingTasks == 0
+                              ? 'आज की सभी सेवा गतिविधियाँ पूर्ण हैं।'
+                              : 'आज $pendingTasks कार्य अभी लंबित हैं।',
+                          style: const TextStyle(color: _muted, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _leaf,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle_outline, color: _forest),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${store.completedChecklist}/4',
+                          style: const TextStyle(
+                            color: _forest,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

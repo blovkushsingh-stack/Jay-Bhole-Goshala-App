@@ -18,6 +18,11 @@ class CowRecord {
     this.vaccination = '',
     this.disease = '',
     this.photoData,
+    this.goshalaId = 'jay-bhole-goshala',
+    this.isMilking = false,
+    this.pregnancyStatus = 'गैर-गर्भवती',
+    this.dailyMilkYield = '',
+    this.expectedCalvingDate,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : status = status ?? health,
@@ -40,6 +45,11 @@ class CowRecord {
   final String vaccination;
   final String disease;
   final String? photoData;
+  final String goshalaId;
+  final bool isMilking;
+  final String pregnancyStatus;
+  final String dailyMilkYield;
+  final DateTime? expectedCalvingDate;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -51,7 +61,66 @@ class CowRecord {
     'अन्य',
   ];
 
+  static const List<String> pregnancyStatusOptions = [
+    'गैर-गर्भवती',
+    'गर्भवती',
+    'संभावित',
+    'लागू नहीं',
+  ];
+
   String get statusLabel => status.isEmpty ? health : status;
+
+  CowRecord copyWith({
+    String? id,
+    String? tag,
+    String? name,
+    int? age,
+    String? breed,
+    String? gender,
+    DateTime? arrivalDate,
+    String? health,
+    String? status,
+    String? notes,
+    String? color,
+    String? sourceDetails,
+    String? weight,
+    String? vaccination,
+    String? disease,
+    String? photoData,
+    String? goshalaId,
+    bool? isMilking,
+    String? pregnancyStatus,
+    String? dailyMilkYield,
+    DateTime? expectedCalvingDate,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return CowRecord(
+      id: id ?? this.id,
+      tag: tag ?? this.tag,
+      name: name ?? this.name,
+      age: age ?? this.age,
+      breed: breed ?? this.breed,
+      gender: gender ?? this.gender,
+      arrivalDate: arrivalDate ?? this.arrivalDate,
+      health: health ?? this.health,
+      status: status ?? this.status,
+      notes: notes ?? this.notes,
+      color: color ?? this.color,
+      sourceDetails: sourceDetails ?? this.sourceDetails,
+      weight: weight ?? this.weight,
+      vaccination: vaccination ?? this.vaccination,
+      disease: disease ?? this.disease,
+      photoData: photoData ?? this.photoData,
+      goshalaId: goshalaId ?? this.goshalaId,
+      isMilking: isMilking ?? this.isMilking,
+      pregnancyStatus: pregnancyStatus ?? this.pregnancyStatus,
+      dailyMilkYield: dailyMilkYield ?? this.dailyMilkYield,
+      expectedCalvingDate: expectedCalvingDate ?? this.expectedCalvingDate,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -70,6 +139,11 @@ class CowRecord {
     'vaccination': vaccination,
     'disease': disease,
     'photoData': photoData,
+    'goshalaId': goshalaId,
+    'isMilking': isMilking,
+    'pregnancyStatus': pregnancyStatus,
+    'dailyMilkYield': dailyMilkYield,
+    'expectedCalvingDate': expectedCalvingDate?.toIso8601String(),
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
   };
@@ -81,6 +155,9 @@ class CowRecord {
     final statusValue = _stringValue(json['status']).isNotEmpty
         ? _stringValue(json['status'])
         : healthValue;
+
+    final pregStatus = _stringValue(json['pregnancyStatus']);
+    final fallbackPreg = statusValue == 'गर्भवती' ? 'गर्भवती' : 'गैर-गर्भवती';
 
     return CowRecord(
       id: _stringValue(json['id']),
@@ -99,6 +176,15 @@ class CowRecord {
       vaccination: _stringValue(json['vaccination']),
       disease: _stringValue(json['disease']),
       photoData: json['photoData'] as String?,
+      goshalaId: _stringValue(json['goshalaId']).isNotEmpty
+          ? _stringValue(json['goshalaId'])
+          : 'jay-bhole-goshala',
+      isMilking: json['isMilking'] is bool
+          ? json['isMilking'] as bool
+          : (json['isMilking']?.toString().toLowerCase() == 'true'),
+      pregnancyStatus: pregStatus.isNotEmpty ? pregStatus : fallbackPreg,
+      dailyMilkYield: _stringValue(json['dailyMilkYield']),
+      expectedCalvingDate: _nullableDateValue(json['expectedCalvingDate']),
       createdAt: _dateValue(json['createdAt'], fallback: DateTime.now()),
       updatedAt: _dateValue(json['updatedAt'], fallback: DateTime.now()),
     );
@@ -125,5 +211,19 @@ class CowRecord {
       }
     }
     return fallback;
+  }
+
+  static DateTime? _nullableDateValue(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) {
+      try {
+        return DateTime.parse(value);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
   }
 }

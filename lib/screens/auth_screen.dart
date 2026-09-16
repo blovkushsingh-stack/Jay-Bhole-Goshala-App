@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../app_data.dart';
 import '../branding/brand_config.dart';
+import '../models/app_user.dart';
 import '../services/firebase_backend.dart';
 import '../widgets/brand_logo.dart';
 
@@ -113,37 +114,49 @@ class _AuthScreenState extends State<AuthScreen> {
               },
             );
 
-        final isAdmin = await FirebaseBackend.instance
-            .isCurrentUserAdmin()
-            .timeout(
-              const Duration(seconds: 10),
-              onTimeout: () {
-                throw TimeoutException(
-                  'Admin authorization check timed out. Please try again.',
-                );
-              },
-            );
+        final user = credential.user;
+        if (user == null) {
+          throw StateError('Login failed. User profile could not be found.');
+        }
 
-        if (!isAdmin) {
+        // Fetch user profile and role from Firestore
+        var profile = await FirebaseBackend.instance
+            .fetchUserProfile(user.uid)
+            .timeout(const Duration(seconds: 10), onTimeout: () => null);
+
+        // If profile doesn't exist yet in Firestore, create default entry
+        if (profile == null) {
+          final isLegacyAdmin = await FirebaseBackend.instance
+              .isCurrentUserAdmin();
+          profile = AppUser(
+            uid: user.uid,
+            email: user.email ?? email,
+            name: user.displayName ?? (email.split('@').first),
+            role: isLegacyAdmin ? UserRole.admin : UserRole.viewer,
+          );
+          await FirebaseBackend.instance.saveUserProfile(profile);
+        }
+
+        if (!profile.isActive) {
           await FirebaseBackend.instance.signOut();
-          _showMessage('You are not authorized to access the admin portal.');
+          _showMessage(
+            'आपका खाता निष्क्रिय (Disabled) कर दिया गया है। व्यवस्थापक से संपर्क करें।',
+          );
           return;
         }
 
         if (kDebugMode) {
           debugPrint(
-            'AuthScreen: login success for uid=${credential.user!.uid}, email=${credential.user!.email}',
+            'AuthScreen: login success for uid=${user.uid}, role=${profile.role.value}',
           );
         }
 
-        if (kDebugMode) {
-          debugPrint(
-            'AuthScreen: syncing local cloud data for authenticated uid=${credential.user!.uid}',
-          );
+        if (profile.canEditRecords) {
+          await LocalGoshalaStore.instance.syncLocalDataToCloud();
         }
 
-        await LocalGoshalaStore.instance.syncLocalDataToCloud();
-        if (mounted) Navigator.of(context).pop();
+        _showMessage('स्वागत है, ${profile.name}! (${profile.role.label})');
+        if (mounted) Navigator.of(context).pop(profile);
       } else {
         final credential = await FirebaseBackend.instance
             .register(email: email, password: password)
@@ -156,15 +169,27 @@ class _AuthScreenState extends State<AuthScreen> {
               },
             );
 
-        if (credential.user != null && mounted) {
-          _showMessage(
-            'Account created successfully. Please login with your credentials.',
+        final user = credential.user;
+        if (user != null) {
+          // Register user with default role (viewer by default for public signups)
+          final newProfile = AppUser(
+            uid: user.uid,
+            email: user.email ?? email,
+            name: email.split('@').first,
+            role: UserRole.viewer,
           );
-          setState(() {
-            _isLogin = true;
-            _passwordController.clear();
-            _confirmPasswordController.clear();
-          });
+          await FirebaseBackend.instance.saveUserProfile(newProfile);
+
+          if (mounted) {
+            _showMessage(
+              'Account created successfully. Please login with your credentials.',
+            );
+            setState(() {
+              _isLogin = true;
+              _passwordController.clear();
+              _confirmPasswordController.clear();
+            });
+          }
         }
 
         if (kDebugMode) {
@@ -277,8 +302,8 @@ class _AuthScreenState extends State<AuthScreen> {
                         const SizedBox(height: 8),
                         Text(
                           isLogin
-                              ? 'गौशाला समिति के सुरक्षित admin portal में प्रवेश करें।'
-                              : 'नया admin account बनाएं और प्रवेश करें।',
+                              ? 'गौशाला समिति के सुरक्षित पोर्टल में प्रवेश करें।'
+                              : 'नया खाता बनाएं और सेवा से जुड़ें।',
                           style: const TextStyle(
                             color: BrandConfig.muted,
                             fontSize: 14,

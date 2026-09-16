@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_data.dart';
 import 'branding/brand_config.dart';
+import 'models/app_user.dart';
 import 'screens/auth_screen.dart';
 import 'screens/staff_management_screen.dart';
 import 'services/firebase_backend.dart';
@@ -393,102 +394,177 @@ class ProfileScreen extends StatelessWidget {
     final committee = LocalGoshalaStore.instance.committee;
     return SecondaryScaffold(
       title: 'प्रोफाइल',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _IntroCard(
-            eyebrow: 'समिति जानकारी',
-            title: committee.name,
-            text:
-                'गौ सेवा और समाज सेवा के लिए समर्पित समिति। विस्तृत जानकारी जल्द जोड़ी जाएगी।',
-            icon: Icons.account_circle_outlined,
-          ),
-          const SizedBox(height: 20),
-          _DetailsPanel(
-            rows: [
-              ('संपर्क', 'मोबाइल और WhatsApp settings में जोड़ें'),
-              ('पता', committee.address),
-              ('UPI', BrandConfig.upi),
+      child: StreamBuilder<AppUser?>(
+        stream: FirebaseBackend.instance.userProfileChanges(),
+        builder: (context, snapshot) {
+          final user = snapshot.data;
+          final isLoggedIn = user != null;
+          final role = user?.role ?? UserRole.viewer;
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (isLoggedIn) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE0E8DE)),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 26,
+                        backgroundColor: role.isAdmin
+                            ? _forest
+                            : (role.isStaff ? _saffron : _deepForest),
+                        child: Text(
+                          user.name.isNotEmpty
+                              ? user.name[0].toUpperCase()
+                              : 'U',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              user.name,
+                              style: const TextStyle(
+                                color: _ink,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 17,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              user.email,
+                              style: const TextStyle(
+                                color: _muted,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: role.isAdmin
+                                    ? _leaf
+                                    : (role.isStaff
+                                          ? const Color(0xFFFFF1DC)
+                                          : const Color(0xFFEAEAEA)),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                role.label,
+                                style: TextStyle(
+                                  color: role.isAdmin
+                                      ? _forest
+                                      : (role.isStaff ? _saffron : _ink),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              _IntroCard(
+                eyebrow: 'समिति जानकारी',
+                title: committee.name,
+                text:
+                    'गौ सेवा और समाज सेवा के लिए समर्पित समिति। विस्तृत जानकारी जल्द जोड़ी जाएगी।',
+                icon: Icons.account_circle_outlined,
+              ),
+              const SizedBox(height: 20),
+              _DetailsPanel(
+                rows: [
+                  ('संपर्क', 'मोबाइल और WhatsApp settings में जोड़ें'),
+                  ('पता', committee.address),
+                  ('UPI', BrandConfig.upi),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (!isLoggedIn)
+                _ProfileAction(
+                  icon: Icons.lock_outline,
+                  title: 'Firebase सुरक्षित प्रवेश',
+                  onTap: () => Navigator.of(
+                    context,
+                  ).push(MaterialPageRoute(builder: (_) => const AuthScreen())),
+                ),
+              if (role.isAdmin) ...[
+                _ProfileAction(
+                  icon: Icons.groups_2_outlined,
+                  title: 'Staff Management (व्यवस्थापक)',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const AdminGate(child: StaffManagementScreen()),
+                    ),
+                  ),
+                ),
+                _ProfileAction(
+                  icon: Icons.settings_outlined,
+                  title: 'समिति Settings (व्यवस्थापक)',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AdminGate(child: SettingsScreen()),
+                    ),
+                  ),
+                ),
+              ],
+              _ProfileAction(
+                icon: Icons.privacy_tip_outlined,
+                title: 'Privacy Policy',
+                onTap: () =>
+                    _showMessage(context, 'Privacy Policy जल्द उपलब्ध होगी।'),
+              ),
+              _ProfileAction(
+                icon: Icons.info_outline_rounded,
+                title: 'About App',
+                onTap: () => _showMessage(
+                  context,
+                  'ऐप की विस्तृत जानकारी जल्द उपलब्ध होगी।',
+                ),
+              ),
+              if (isLoggedIn) ...[
+                const SizedBox(height: 8),
+                _ProfileAction(
+                  icon: Icons.logout_rounded,
+                  title: 'लॉगआउट करें (Sign Out)',
+                  onTap: () async {
+                    await FirebaseBackend.instance.signOut();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('सफलतापूर्वक लॉगआउट किया गया।'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
             ],
-          ),
-          const SizedBox(height: 16),
-          _ProfileAction(
-            icon: Icons.lock_outline,
-            title: 'Firebase सुरक्षित प्रवेश',
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const AuthScreen())),
-          ),
-          _ProfileAction(
-            icon: Icons.groups_2_outlined,
-            title: 'Staff Management',
-            onTap: () async {
-              try {
-                final isAdmin = await FirebaseBackend.instance
-                    .isCurrentUserAdmin();
-                if (!context.mounted) return;
-                if (!isAdmin) {
-                  Navigator.of(
-                    context,
-                  ).push(MaterialPageRoute(builder: (_) => const AuthScreen()));
-                  return;
-                }
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        const AdminGate(child: StaffManagementScreen()),
-                  ),
-                );
-              } catch (_) {
-                if (!context.mounted) return;
-                Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => const AuthScreen()));
-              }
-            },
-          ),
-          _ProfileAction(
-            icon: Icons.settings_outlined,
-            title: 'समिति Settings',
-            onTap: () async {
-              try {
-                final isAdmin = await FirebaseBackend.instance
-                    .isCurrentUserAdmin();
-                if (!context.mounted) return;
-                if (!isAdmin) {
-                  Navigator.of(
-                    context,
-                  ).push(MaterialPageRoute(builder: (_) => const AuthScreen()));
-                  return;
-                }
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const AdminGate(child: SettingsScreen()),
-                  ),
-                );
-              } catch (_) {
-                if (!context.mounted) return;
-                Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => const AuthScreen()));
-              }
-            },
-          ),
-          _ProfileAction(
-            icon: Icons.privacy_tip_outlined,
-            title: 'Privacy Policy',
-            onTap: () =>
-                _showMessage(context, 'Privacy Policy जल्द उपलब्ध होगी।'),
-          ),
-          _ProfileAction(
-            icon: Icons.info_outline_rounded,
-            title: 'About App',
-            onTap: () => _showMessage(
-              context,
-              'ऐप की विस्तृत जानकारी जल्द उपलब्ध होगी।',
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -1231,23 +1307,39 @@ class NoticesScreen extends StatelessWidget {
   }
 }
 
-class AdminGate extends StatelessWidget {
-  const AdminGate({required this.child, super.key});
+class RoleGate extends StatelessWidget {
+  const RoleGate({
+    required this.child,
+    required this.allowedRoles,
+    this.customRestrictedMessage,
+    super.key,
+  });
 
   final Widget child;
+  final List<UserRole> allowedRoles;
+  final String? customRestrictedMessage;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<bool>(
-      future: FirebaseBackend.instance.isCurrentUserAdmin(),
+    return StreamBuilder<AppUser?>(
+      stream: FirebaseBackend.instance.userProfileChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (snapshot.hasError || !(snapshot.data ?? false)) {
-          return const UnauthorizedAccessScreen();
+        final profile = snapshot.data;
+        final role = profile?.role ?? UserRole.viewer;
+        final isAuthorized =
+            profile != null && profile.isActive && allowedRoles.contains(role);
+
+        if (!isAuthorized) {
+          return UnauthorizedAccessScreen(
+            allowedRoles: allowedRoles,
+            currentRole: profile?.role,
+            message: customRestrictedMessage,
+          );
         }
         return child;
       },
@@ -1255,11 +1347,56 @@ class AdminGate extends StatelessWidget {
   }
 }
 
-class UnauthorizedAccessScreen extends StatelessWidget {
-  const UnauthorizedAccessScreen({super.key});
+class AdminGate extends StatelessWidget {
+  const AdminGate({required this.child, super.key});
+
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
+    return RoleGate(
+      allowedRoles: const [UserRole.admin],
+      customRestrictedMessage:
+          'यह भाग केवल अधिकृत व्यवस्थापक (Admin) के लिए सुरक्षित है।',
+      child: child,
+    );
+  }
+}
+
+class StaffGate extends StatelessWidget {
+  const StaffGate({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return RoleGate(
+      allowedRoles: const [UserRole.admin, UserRole.staff],
+      customRestrictedMessage:
+          'यह भाग केवल व्यवस्थापक (Admin) और कर्मचारी (Staff) के लिए उपलब्ध है।',
+      child: child,
+    );
+  }
+}
+
+class UnauthorizedAccessScreen extends StatelessWidget {
+  const UnauthorizedAccessScreen({
+    this.allowedRoles = const [UserRole.admin],
+    this.currentRole,
+    this.message,
+    super.key,
+  });
+
+  final List<UserRole> allowedRoles;
+  final UserRole? currentRole;
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    final defaultMessage =
+        message ??
+        'यह सेक्शन केवल अधिकृत ${allowedRoles.map((r) => r.label).join(' / ')} उपयोगकर्ताओं के लिए सीमित है।';
+
     return Scaffold(
       body: Center(
         child: Padding(
@@ -1274,24 +1411,35 @@ class UnauthorizedAccessScreen extends StatelessWidget {
                   const Icon(Icons.block_rounded, size: 42, color: _forest),
                   const SizedBox(height: 16),
                   const Text(
-                    'Access denied',
+                    'अनधिकृत प्रवेश (Access Denied)',
                     style: TextStyle(
-                      fontSize: 22,
+                      fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: _ink,
                     ),
                   ),
                   const SizedBox(height: 10),
-                  const Text(
-                    'This section is restricted to authorized admin users only.',
-                    style: TextStyle(color: _muted, height: 1.5),
+                  Text(
+                    defaultMessage,
+                    style: const TextStyle(color: _muted, height: 1.5),
                   ),
-                  const SizedBox(height: 16),
+                  if (currentRole != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'वर्तमान भूमिका: ${currentRole!.label}',
+                      style: const TextStyle(
+                        color: _forest,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
                   Row(
                     children: [
                       TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('Back'),
+                        child: const Text('वापस जाएं'),
                       ),
                       const SizedBox(width: 8),
                       FilledButton(
@@ -1303,7 +1451,7 @@ class UnauthorizedAccessScreen extends StatelessWidget {
                             ),
                           );
                         },
-                        child: const Text('Admin Login'),
+                        child: const Text('खाता बदलें / Login'),
                       ),
                     ],
                   ),

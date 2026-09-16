@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../app_data.dart';
+import '../models/app_user.dart';
 import '../models/cow_record.dart';
+import '../services/firebase_backend.dart';
 import '../widgets/cow_avatar.dart';
 
 const _forest = Color(0xFF2F6B45);
@@ -343,11 +345,27 @@ class CowDetailScreen extends StatelessWidget {
   final CowRecord cow;
 
   Future<void> _delete(BuildContext context) async {
+    final isAdmin = await FirebaseBackend.instance.isCurrentUserAdmin();
+    if (!isAdmin) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('केवल व्यवस्थापक (Admin) ही रिकॉर्ड हटा सकते हैं।'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('गाय का रिकॉर्ड हटाएं?'),
-        content: Text('${cow.name} का रिकॉर्ड स्थायी रूप से हट जाएगा।'),
+        content: Text(
+          '${cow.name.isEmpty ? cow.tag : cow.name} का रिकॉर्ड स्थायी रूप से हट जाएगा। क्या आप वाकई इसे हटाना चाहते हैं?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -355,25 +373,51 @@ class CowDetailScreen extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
             child: const Text('हटाएं'),
           ),
         ],
       ),
     );
     if (shouldDelete != true || !context.mounted) return;
-    await LocalGoshalaStore.instance.deleteCow(cow.id);
-    if (context.mounted) Navigator.pop(context);
+    try {
+      await LocalGoshalaStore.instance.deleteCow(cow.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('रिकॉर्ड सफलतापूर्वक हटा दिया गया।'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('रिकॉर्ड हटाने में त्रुटि: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final rows = <(String, String)>[
       ('Cow ID / Tag', '${cow.id} • ${cow.tag}'),
-      ('नाम', cow.name),
+      ('नाम', cow.name.isEmpty ? 'बिना नाम' : cow.name),
       ('नस्ल', cow.breed.isEmpty ? 'अज्ञात' : cow.breed),
       ('लिंग', cow.gender.isEmpty ? 'अज्ञात' : cow.gender),
       ('उम्र', '${cow.age} वर्ष'),
       ('रंग', cow.color.isEmpty ? 'अज्ञात' : cow.color),
+      ('दुधारू स्थिति', cow.isMilking ? 'हाँ (दुधारू)' : 'नहीं'),
+      if (cow.isMilking && cow.dailyMilkYield.isNotEmpty)
+        ('दैनिक दूध उत्पादन', cow.dailyMilkYield),
+      ('गर्भावस्था स्थिति', cow.pregnancyStatus),
+      if (cow.expectedCalvingDate != null)
+        ('संभावित प्रसव तिथि', _formatDate(cow.expectedCalvingDate!)),
       ('आगमन तिथि', _formatDate(cow.arrivalDate)),
       (
         'आगमन स्रोत',
@@ -394,19 +438,40 @@ class CowDetailScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('गाय详情'),
+        title: const Text('गाय विवरण'),
         actions: [
-          IconButton(
-            tooltip: 'Edit',
-            onPressed: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => CowFormScreen(cow: cow))),
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          IconButton(
-            tooltip: 'Delete',
-            onPressed: () => _delete(context),
-            icon: const Icon(Icons.delete_outline),
+          StreamBuilder<AppUser?>(
+            stream: FirebaseBackend.instance.userProfileChanges(),
+            builder: (context, snapshot) {
+              final user = snapshot.data;
+              final canEdit = user?.canEditRecords ?? true;
+              final isAdmin = user?.isAdmin ?? false;
+
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (canEdit)
+                    IconButton(
+                      tooltip: 'Edit',
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => CowFormScreen(cow: cow),
+                        ),
+                      ),
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
+                  if (isAdmin)
+                    IconButton(
+                      tooltip: 'Delete (केवल Admin)',
+                      onPressed: () => _delete(context),
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: Colors.redAccent,
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -509,9 +574,13 @@ class _CowFormScreenState extends State<CowFormScreen> {
   late final TextEditingController _vaccination;
   late final TextEditingController _disease;
   late final TextEditingController _notes;
+  late final TextEditingController _dailyMilkYield;
   late String _gender;
   late String _status;
+  late bool _isMilking;
+  late String _pregnancyStatus;
   late DateTime _arrivalDate;
+  DateTime? _expectedCalvingDate;
   String? _photoData;
   bool _saving = false;
 
@@ -530,9 +599,15 @@ class _CowFormScreenState extends State<CowFormScreen> {
     _vaccination = TextEditingController(text: cow?.vaccination ?? '');
     _disease = TextEditingController(text: cow?.disease ?? '');
     _notes = TextEditingController(text: cow?.notes ?? '');
+    _dailyMilkYield = TextEditingController(text: cow?.dailyMilkYield ?? '');
     _gender = cow?.gender ?? 'मादा';
     _status = cow?.statusLabel ?? 'स्वस्थ';
+    _isMilking = cow?.isMilking ?? false;
+    _pregnancyStatus =
+        cow?.pregnancyStatus ??
+        (_status == 'गर्भवती' ? 'गर्भवती' : 'गैर-गर्भवती');
     _arrivalDate = cow?.arrivalDate ?? DateTime.now();
+    _expectedCalvingDate = cow?.expectedCalvingDate;
     _photoData = cow?.photoData;
   }
 
@@ -550,6 +625,7 @@ class _CowFormScreenState extends State<CowFormScreen> {
       _vaccination,
       _disease,
       _notes,
+      _dailyMilkYield,
     ]) {
       controller.dispose();
     }
@@ -572,6 +648,17 @@ class _CowFormScreenState extends State<CowFormScreen> {
       lastDate: DateTime.now().add(const Duration(days: 3650)),
     );
     if (date != null) setState(() => _arrivalDate = date);
+  }
+
+  Future<void> _pickCalvingDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate:
+          _expectedCalvingDate ?? DateTime.now().add(const Duration(days: 90)),
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (date != null) setState(() => _expectedCalvingDate = date);
   }
 
   Future<void> _save() async {
@@ -598,6 +685,13 @@ class _CowFormScreenState extends State<CowFormScreen> {
         vaccination: _vaccination.text.trim(),
         disease: _disease.text.trim(),
         photoData: _photoData,
+        goshalaId: widget.cow?.goshalaId ?? 'jay-bhole-goshala',
+        isMilking: _isMilking,
+        pregnancyStatus: _pregnancyStatus,
+        dailyMilkYield: _dailyMilkYield.text.trim(),
+        expectedCalvingDate: _pregnancyStatus == 'गर्भवती'
+            ? _expectedCalvingDate
+            : null,
         createdAt: widget.cow?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -629,7 +723,7 @@ class _CowFormScreenState extends State<CowFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.cow == null ? 'गाय जोड़ें' : 'गाय编辑 करें'),
+        title: Text(widget.cow == null ? 'गाय जोड़ें' : 'गाय संपादित करें'),
       ),
       body: Form(
         key: _formKey,
@@ -668,8 +762,8 @@ class _CowFormScreenState extends State<CowFormScreen> {
             const SizedBox(height: 18),
             _textField(_id, 'Cow ID / Tag Number', required: false),
             _textField(_tag, 'Tag Number', required: false),
-            _textField(_name, 'नाम'),
-            _textField(_breed, 'नस्ल'),
+            _textField(_name, 'नाम (वैकल्पिक)', required: false),
+            _textField(_breed, 'नस्ल (उदा. गिर, साहीवाल, थारपारकर)'),
             Row(
               children: [
                 Expanded(child: _textField(_age, 'उम्र (वर्ष)', numeric: true)),
@@ -694,6 +788,74 @@ class _CowFormScreenState extends State<CowFormScreen> {
               },
             ),
             const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE0E8DE)),
+              ),
+              child: SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'क्या यह दुधारू गाय है? (Milking)',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                value: _isMilking,
+                activeThumbColor: _forest,
+                onChanged: (val) => setState(() => _isMilking = val),
+              ),
+            ),
+            if (_isMilking) ...[
+              const SizedBox(height: 10),
+              _textField(
+                _dailyMilkYield,
+                'दैनिक औसत दूध उत्पादन (उदा. 8 लीटर)',
+                required: false,
+              ),
+            ],
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _pregnancyStatus,
+              decoration: const InputDecoration(
+                labelText: 'गर्भावस्था स्थिति (Pregnancy Status)',
+              ),
+              items: CowRecord.pregnancyStatusOptions
+                  .map(
+                    (value) =>
+                        DropdownMenuItem(value: value, child: Text(value)),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _pregnancyStatus = value);
+                }
+              },
+            ),
+            if (_pregnancyStatus == 'गर्भवती') ...[
+              const SizedBox(height: 10),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: Color(0xFFE0E8DE)),
+                ),
+                tileColor: Colors.white,
+                title: const Text('संभावित प्रसव तिथि (Expected Calving Date)'),
+                subtitle: Text(
+                  _expectedCalvingDate == null
+                      ? 'तारीख चुनें'
+                      : _formatDate(_expectedCalvingDate!),
+                  style: TextStyle(
+                    color: _expectedCalvingDate == null ? _muted : _forest,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                trailing: const Icon(Icons.event_outlined),
+                onTap: _pickCalvingDate,
+              ),
+            ],
+            const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('आगमन तिथि'),
@@ -704,7 +866,7 @@ class _CowFormScreenState extends State<CowFormScreen> {
             _textField(_sourceDetails, 'स्रोत / आगमन विवरण', required: false),
             DropdownButtonFormField<String>(
               initialValue: _status,
-              decoration: const InputDecoration(labelText: 'स्थिति'),
+              decoration: const InputDecoration(labelText: 'स्वास्थ्य स्थिति'),
               items: CowRecord.healthStatusOptions
                   .map(
                     (value) =>
@@ -720,7 +882,13 @@ class _CowFormScreenState extends State<CowFormScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: _textField(_weight, 'वजन', required: false)),
+                Expanded(
+                  child: _textField(
+                    _weight,
+                    'वजन (उदा. 350 kg)',
+                    required: false,
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _textField(
@@ -738,7 +906,12 @@ class _CowFormScreenState extends State<CowFormScreen> {
               required: false,
             ),
             const SizedBox(height: 4),
-            _textField(_notes, 'नोट्स', maxLines: 4, required: false),
+            _textField(
+              _notes,
+              'नोट्स / विशेष देखभाल निर्देश',
+              maxLines: 3,
+              required: false,
+            ),
             const SizedBox(height: 18),
             FilledButton.icon(
               onPressed: _saving ? null : _save,

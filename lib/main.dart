@@ -33,7 +33,12 @@ Future<void> main() async {
     await FirebaseBackend.instance.initialize();
     if (FirebaseBackend.instance.isAvailable &&
         FirebaseBackend.instance.auth.currentUser != null) {
-      await LocalGoshalaStore.instance.syncLocalDataToCloud();
+      final profile = await FirebaseBackend.instance.getCurrentUserProfile();
+      if (profile != null && !profile.isActive) {
+        await FirebaseBackend.instance.signOut();
+      } else if (profile != null && profile.canEditRecords) {
+        await LocalGoshalaStore.instance.syncLocalDataToCloud();
+      }
     }
     runApp(const JayBholeGoshalaApp());
   } catch (error, stack) {

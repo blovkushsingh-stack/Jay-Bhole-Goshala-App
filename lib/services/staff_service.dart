@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 
 import '../models/staff_member.dart';
 import 'firebase_backend.dart';
@@ -14,40 +13,7 @@ class StaffService {
       _backend.firestore.collection('staff');
 
   Future<bool> isCurrentUserAdmin() async {
-    final user = _backend.auth.currentUser;
-    if (user == null || !_backend.isAvailable) {
-      debugPrint(
-        'StaffService.isCurrentUserAdmin: no authenticated user or backend unavailable',
-      );
-      return false;
-    }
-
-    final docPath = 'admins/${user.uid}';
-    debugPrint(
-      'StaffService.isCurrentUserAdmin: checking admin doc at $docPath for uid=${user.uid}',
-    );
-
-    try {
-      final doc = await _backend.firestore
-          .collection('admins')
-          .doc(user.uid)
-          .get();
-      final role = doc.data()?['role']?.toString().trim().toLowerCase();
-      debugPrint(
-        'StaffService.isCurrentUserAdmin: docExists=${doc.exists}, role=$role, path=$docPath',
-      );
-      return doc.exists && role == 'admin';
-    } on FirebaseException catch (e) {
-      debugPrint(
-        'StaffService.isCurrentUserAdmin: Firestore permission error for $docPath: ${e.code} - ${e.message}',
-      );
-      return false;
-    } catch (e) {
-      debugPrint(
-        'StaffService.isCurrentUserAdmin: unexpected error for $docPath: $e',
-      );
-      return false;
-    }
+    return _backend.isCurrentUserAdmin();
   }
 
   bool get canManageStaff {

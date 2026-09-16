@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
 import '../firebase_options.dart';
+import '../models/app_user.dart';
 
 class FirebaseBackend {
   FirebaseBackend._();
@@ -96,47 +97,106 @@ class FirebaseBackend {
   }
 
   Future<String?> fetchUserRole(String uid) async {
+    final profile = await fetchUserProfile(uid);
+    return profile?.role.value;
+  }
+
+  Future<AppUser?> fetchUserProfile(String uid) async {
     if (!isAvailable) return null;
-    final doc = await firestore.collection('users').doc(uid).get();
-    if (!doc.exists) return null;
-    final value = doc.data()?['role'];
-    return value?.toString();
+    try {
+      final userDoc = await firestore.collection('users').doc(uid).get();
+      if (userDoc.exists && userDoc.data() != null) {
+        return AppUser.fromFirestore(userDoc);
+      }
+
+      // Fallback for legacy admin document if not present in users collection
+      final adminDoc = await firestore.collection('admins').doc(uid).get();
+      if (adminDoc.exists) {
+        final adminData = adminDoc.data();
+        final roleStr =
+            adminData?['role']?.toString().trim().toLowerCase() ?? 'admin';
+        return AppUser(
+          uid: uid,
+          email:
+              adminData?['email']?.toString() ??
+              (auth.currentUser?.email ?? ''),
+          name: adminData?['name']?.toString() ?? 'Admin',
+          role: UserRole.fromString(roleStr),
+        );
+      }
+    } catch (e) {
+      debugPrint('FirebaseBackend.fetchUserProfile error for uid=$uid: $e');
+    }
+    return null;
+  }
+
+  Future<AppUser?> getCurrentUserProfile() async {
+    final user = auth.currentUser;
+    if (user == null) return null;
+    return fetchUserProfile(user.uid);
+  }
+
+  Future<void> saveUserProfile(AppUser profile) async {
+    if (!isAvailable) return;
+    try {
+      await firestore
+          .collection('users')
+          .doc(profile.uid)
+          .set(profile.toFirestore(), SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('FirebaseBackend.saveUserProfile error: $e');
+      rethrow;
+    }
+  }
+
+  Future<UserRole> getCurrentUserRole() async {
+    final user = auth.currentUser;
+    if (user == null || !isAvailable) return UserRole.viewer;
+
+    final profile = await getCurrentUserProfile();
+    if (profile != null) {
+      return profile.role;
+    }
+
+    // Fallback: Check legacy admins collection
+    final isLegacyAdmin = await _checkLegacyAdmin(user.uid);
+    return isLegacyAdmin ? UserRole.admin : UserRole.viewer;
+  }
+
+  Future<bool> _checkLegacyAdmin(String uid) async {
+    try {
+      final adminDoc = await firestore.collection('admins').doc(uid).get();
+      return adminDoc.exists &&
+          adminDoc.data()?['role']?.toString().trim().toLowerCase() == 'admin';
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> isCurrentUserAdmin() async {
     final user = auth.currentUser;
-
     if (user == null) {
       debugPrint('FirebaseBackend.isCurrentUserAdmin: no authenticated user');
       return false;
     }
 
-    final docPath = 'admins/${user.uid}';
-    debugPrint(
-      'FirebaseBackend.isCurrentUserAdmin: checking $docPath for uid=${user.uid}',
-    );
+    final role = await getCurrentUserRole();
+    if (role == UserRole.admin) return true;
 
-    try {
-      final adminDoc = await firestore.collection('admins').doc(user.uid).get();
-      final exists = adminDoc.exists;
-      final role = adminDoc.data()?['role']?.toString().trim().toLowerCase();
+    // Direct check on admins collection for absolute backward compatibility
+    return _checkLegacyAdmin(user.uid);
+  }
 
-      debugPrint(
-        'FirebaseBackend.isCurrentUserAdmin: docExists=$exists, role=$role, path=$docPath',
-      );
+  Future<bool> isCurrentUserStaff() async {
+    final role = await getCurrentUserRole();
+    return role == UserRole.admin || role == UserRole.staff;
+  }
 
-      return exists && role == 'admin';
-    } on FirebaseException catch (e) {
-      debugPrint(
-        'FirebaseBackend.isCurrentUserAdmin: Firestore error for $docPath: ${e.code} - ${e.message}',
-      );
-      return false;
-    } catch (e) {
-      debugPrint(
-        'FirebaseBackend.isCurrentUserAdmin: unexpected error for $docPath: $e',
-      );
-      return false;
-    }
+  Stream<AppUser?> userProfileChanges() {
+    return authStateChanges().asyncMap((user) async {
+      if (user == null) return null;
+      return getCurrentUserProfile();
+    });
   }
 
   Future<UserCredential> signIn({
