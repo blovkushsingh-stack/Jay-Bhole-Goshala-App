@@ -4,10 +4,8 @@ import 'app_data.dart';
 import 'branding/brand_config.dart';
 import 'models/app_user.dart';
 import 'screens.dart';
-import 'screens/ai_assistant_screen.dart';
-import 'screens/auth_screen.dart';
 import 'screens/cows_screen.dart';
-import 'screens/dashboards/role_dashboard_router.dart';
+import 'screens/ai_assistant_screen.dart';
 import 'services/firebase_backend.dart';
 import 'widgets/brand_logo.dart';
 
@@ -578,45 +576,27 @@ class _WelcomeStatusCard extends StatelessWidget {
               if (isLoggedIn) ...[
                 Row(
                   children: [
-                    InkWell(
-                      onTap: () =>
-                          RoleDashboardRouter.pushDashboard(context, profile),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: role.isAdmin
+                            ? _leaf
+                            : (role.isStaff
+                                  ? const Color(0xFFFFF1DC)
+                                  : const Color(0xFFEAEAEA)),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'लॉगिन: ${role.label}',
+                        style: TextStyle(
                           color: role.isAdmin
-                              ? _leaf
-                              : (role.isStaff
-                                    ? const Color(0xFFFFF1DC)
-                                    : const Color(0xFFEAEAEA)),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'लॉगिन: ${role.label}',
-                              style: TextStyle(
-                                color: role.isAdmin
-                                    ? _forest
-                                    : (role.isStaff ? _saffron : _ink),
-                                fontWeight: FontWeight.w700,
-                                fontSize: 11,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              size: 10,
-                              color: role.isAdmin
-                                  ? _forest
-                                  : (role.isStaff ? _saffron : _ink),
-                            ),
-                          ],
+                              ? _forest
+                              : (role.isStaff ? _saffron : _ink),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
                         ),
                       ),
                     ),
@@ -627,49 +607,6 @@ class _WelcomeStatusCard extends StatelessWidget {
                         color: _muted,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-              ] else ...[
-                Row(
-                  children: [
-                    InkWell(
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const AuthScreen()),
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _leaf,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.lock_outline, size: 12, color: _forest),
-                            SizedBox(width: 4),
-                            Text(
-                              'सुरक्षित लॉगिन (Admin / Staff / User)',
-                              style: TextStyle(
-                                color: _forest,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 11,
-                              ),
-                            ),
-                            SizedBox(width: 4),
-                            Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              size: 10,
-                              color: _forest,
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                   ],

@@ -8,55 +8,19 @@ service firebase.storage {
 
     function isAdmin() {
       return signedIn() &&
-        (
-          (firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid))) ||
-          (firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-           (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-            firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'Admin'))
-        );
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    function isStaff() {
-      return signedIn() &&
-        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'staff' &&
-        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isActive != false;
+    match /cows/{cowId}/{fileName} {
+      allow read: if signedIn();
+      allow write: if isAdmin() && request.resource.size < 10 * 1024 * 1024;
     }
 
-    function canManageModule(perm) {
-      return isAdmin() ||
-        (isStaff() &&
-         ('permissions' in firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data) &&
-         (perm in firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions));
-    }
-
-    // Public Cow QR / Biodata photos are readable by everyone.
-    // Upload is permitted for Admins and Staff with 'cows' permission (capped at 10MB image).
-    // Delete is restricted to Admins only.
-    match /cows/{allPaths=**} {
-      allow read: if true;
-      allow create, update: if canManageModule('cows') &&
-        request.resource.size < 10 * 1024 * 1024 &&
-        request.resource.contentType.matches('image/.*');
-      allow delete: if isAdmin();
-    }
-
-    // Internal goshala documents (administrative only)
-    match /documents/{allPaths=**} {
+    match /documents/{fileName} {
       allow read: if signedIn();
       allow write: if isAdmin() && request.resource.size < 20 * 1024 * 1024;
     }
 
-    // Public products catalog photos
-    match /products/{allPaths=**} {
-      allow read: if true;
-      allow create, update: if isAdmin() &&
-        request.resource.size < 10 * 1024 * 1024 &&
-        request.resource.contentType.matches('image/.*');
-      allow delete: if isAdmin();
-    }
-
-    // Deny all other access by default
     match /{allPaths=**} {
       allow read, write: if false;
     }

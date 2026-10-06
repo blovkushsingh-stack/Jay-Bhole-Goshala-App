@@ -172,18 +172,12 @@ class FirebaseBackend {
         final profile = AppUser.fromFirestore(userDoc);
         if (profile.role == UserRole.admin) {
           _legacyAdminCache[uid] = true;
-          return profile.copyWith(
-            role: UserRole.admin,
-            permissions: AppPermission.all,
-          );
+          return profile;
         }
         final isLegacyAdmin =
             _legacyAdminCache[uid] ?? await _checkLegacyAdmin(uid);
         if (isLegacyAdmin) {
-          return profile.copyWith(
-            role: UserRole.admin,
-            permissions: AppPermission.all,
-          );
+          return profile.copyWith(role: UserRole.admin);
         }
         return profile;
       }
@@ -197,7 +191,6 @@ class FirebaseBackend {
           email: auth.currentUser?.email ?? '',
           name: auth.currentUser?.displayName ?? 'Admin',
           role: UserRole.admin,
-          permissions: AppPermission.all,
         );
       }
     } catch (e) {

@@ -10,17 +10,9 @@ import '../branding/brand_config.dart';
 import '../models/app_user.dart';
 import '../services/firebase_backend.dart';
 import '../widgets/brand_logo.dart';
-import 'dashboards/role_dashboard_router.dart';
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({
-    super.key,
-    this.redirectOnSuccess = true,
-    this.initialRole = UserRole.admin,
-  });
-
-  final bool redirectOnSuccess;
-  final UserRole initialRole;
+  const AuthScreen({super.key});
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -32,17 +24,10 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  late UserRole _selectedLoginRole;
   bool _isLogin = true;
   bool _isSubmitting = false;
   bool _passwordVisible = false;
   bool _confirmPasswordVisible = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedLoginRole = widget.initialRole;
-  }
 
   @override
   void dispose() {
@@ -85,8 +70,6 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _submit() async {
-    final stopwatch = Stopwatch()..start();
-    debugPrint('[LOGIN_BUTTON_PRESSED] elapsed: ${stopwatch.elapsedMilliseconds}ms');
     if (!mounted) return;
 
     if (!_formKey.currentState!.validate()) {
@@ -98,7 +81,6 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     setState(() => _isSubmitting = true);
-    bool signInCompleted = false;
 
     try {
       if (!FirebaseBackend.instance.isAvailable) {
@@ -121,54 +103,39 @@ class _AuthScreenState extends State<AuthScreen> {
       }
 
       if (_isLogin) {
-        debugPrint('[SIGNIN_START] elapsed: ${stopwatch.elapsedMilliseconds}ms');
-        final credential = await FirebaseBackend.instance.signIn(
-          email: email,
-          password: password,
-        );
+        final credential = await FirebaseBackend.instance
+            .signIn(email: email, password: password)
+            .timeout(
+              const Duration(seconds: 15),
+              onTimeout: () {
+                throw TimeoutException(
+                  'Login request timed out. Please check your internet connection and try again.',
+                );
+              },
+            );
 
         final user = credential.user;
         if (user == null) {
           throw StateError('Login failed. User profile could not be found.');
         }
-        signInCompleted = true;
-        debugPrint(
-          '[SIGNIN_SUCCESS] elapsed: ${stopwatch.elapsedMilliseconds}ms, uid: ${user.uid}',
-        );
 
-        // Fetch user profile through getCurrentUserProfile with forceRefresh to always get fresh role from Firestore
-        debugPrint('[PROFILE_LOAD_START] elapsed: ${stopwatch.elapsedMilliseconds}ms');
+        // Fetch user profile and role from Firestore
         var profile = await FirebaseBackend.instance
-            .getCurrentUserProfile(forceRefresh: true)
-            .timeout(const Duration(seconds: 4), onTimeout: () => null);
+            .fetchUserProfile(user.uid)
+            .timeout(const Duration(seconds: 10), onTimeout: () => null);
 
-        // Fallback admin check only if profile could not be loaded from users collection
+        // If profile doesn't exist yet in Firestore, create default entry
         if (profile == null) {
-          final isActualAdmin = await FirebaseBackend.instance
-              .isCurrentUserAdmin()
-              .timeout(const Duration(seconds: 3), onTimeout: () => false);
-          if (isActualAdmin) {
-            profile = AppUser(
-              uid: user.uid,
-              email: user.email ?? email,
-              name: user.displayName ?? (email.split('@').first),
-              role: UserRole.admin,
-              permissions: AppPermission.all,
-            );
-            unawaited(FirebaseBackend.instance.saveUserProfile(profile));
-          } else {
-            profile = AppUser(
-              uid: user.uid,
-              email: user.email ?? email,
-              name: user.displayName ?? (email.split('@').first),
-              role: UserRole.user,
-            );
-          }
+          final isLegacyAdmin = await FirebaseBackend.instance
+              .isCurrentUserAdmin();
+          profile = AppUser(
+            uid: user.uid,
+            email: user.email ?? email,
+            name: user.displayName ?? (email.split('@').first),
+            role: isLegacyAdmin ? UserRole.admin : UserRole.viewer,
+          );
+          await FirebaseBackend.instance.saveUserProfile(profile);
         }
-
-        debugPrint(
-          '[PROFILE_LOAD_SUCCESS] elapsed: ${stopwatch.elapsedMilliseconds}ms, role: ${profile.role.value}',
-        );
 
         if (!profile.isActive) {
           await FirebaseBackend.instance.signOut();
@@ -185,69 +152,38 @@ class _AuthScreenState extends State<AuthScreen> {
         }
 
         if (profile.canEditRecords) {
-          unawaited(
-            LocalGoshalaStore.instance.syncLocalDataToCloud().catchError(
-              (Object e) =>
-                  debugPrint('AuthScreen: background sync failed: $e'),
-            ),
-          );
+          await LocalGoshalaStore.instance.syncLocalDataToCloud();
         }
 
-        debugPrint(
-          '[ROLE_CHECK_START] elapsed: ${stopwatch.elapsedMilliseconds}ms, requested: ${_selectedLoginRole.value}, actual: ${profile.role.value}',
-        );
-        if (_selectedLoginRole == UserRole.admin && !profile.isAdmin) {
-          await FirebaseBackend.instance.signOut();
-          _showMessage(
-            'यह खाता व्यवस्थापक (Admin) नहीं है (${profile.role.label})। केवल अधिकृत व्यवस्थापक ही यहाँ लॉगिन कर सकते हैं।',
-          );
-          return;
-        } else if (_selectedLoginRole == UserRole.staff &&
-            !profile.isStaff &&
-            !profile.isAdmin) {
-          await FirebaseBackend.instance.signOut();
-          _showMessage(
-            'यह खाता Staff नहीं है (${profile.role.label})। केवल अधिकृत कर्मचारी ही यहाँ लॉगिन कर सकते हैं।',
-          );
-          return;
-        } else {
-          debugPrint(
-            '[ROLE_CHECK_SUCCESS] elapsed: ${stopwatch.elapsedMilliseconds}ms, role: ${profile.role.value}',
-          );
-          _showMessage('स्वागत है, ${profile.name}! (${profile.role.label})');
-        }
-
-        debugPrint(
-          '[LOGIN_FLOW_COMPLETE] elapsed: ${stopwatch.elapsedMilliseconds}ms',
-        );
-        if (mounted) {
-          if (widget.redirectOnSuccess) {
-            RoleDashboardRouter.openDashboard(context, profile);
-          } else {
-            Navigator.of(context).pop(profile);
-          }
-        }
+        _showMessage('स्वागत है, ${profile.name}! (${profile.role.label})');
+        if (mounted) Navigator.of(context).pop(profile);
       } else {
-        final credential = await FirebaseBackend.instance.register(
-          email: email,
-          password: password,
-        );
+        final credential = await FirebaseBackend.instance
+            .register(email: email, password: password)
+            .timeout(
+              const Duration(seconds: 15),
+              onTimeout: () {
+                throw TimeoutException(
+                  'Account creation timed out. Please try again.',
+                );
+              },
+            );
 
         final user = credential.user;
         if (user != null) {
+          // Register user with default role (viewer by default for public signups)
           final newProfile = AppUser(
             uid: user.uid,
             email: user.email ?? email,
             name: email.split('@').first,
-            role: UserRole.user,
+            role: UserRole.viewer,
           );
           await FirebaseBackend.instance.saveUserProfile(newProfile);
 
           if (mounted) {
-            final notice = _selectedLoginRole != UserRole.user
-                ? 'खाता सफलतापूर्वक बन गया! (व्यवस्थापक व Staff अधिकार व्यवस्थापक द्वारा प्रदान किए जाते हैं)। कृपया अब लॉगिन करें।'
-                : 'खाता सफलतापूर्वक बन गया! कृपया लॉगिन करें।';
-            _showMessage(notice);
+            _showMessage(
+              'Account created successfully. Please login with your credentials.',
+            );
             setState(() {
               _isLogin = true;
               _passwordController.clear();
@@ -261,131 +197,35 @@ class _AuthScreenState extends State<AuthScreen> {
         }
       }
     } on FirebaseAuthException catch (error) {
-      if (!signInCompleted) {
+      if (kDebugMode) {
         debugPrint(
-          '[SIGNIN_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, code: ${error.code}, message: ${error.message}',
-        );
-      } else {
-        debugPrint(
-          '[PROFILE_LOAD_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, code: ${error.code}, message: ${error.message}',
+          'AuthScreen: FirebaseAuthException code=${error.code}, message=${error.message ?? 'null'}',
         );
       }
-      debugPrint(
-        'LOGIN: FirebaseAuthException code=${error.code} message=${error.message}',
-      );
-
-      final String message;
-      switch (error.code) {
-        case 'invalid-credential':
-        case 'wrong-password':
-          message =
-              'गलत Email अथवा Password दर्ज किया गया है। कृपया पुनः जाँच कर प्रयास करें।';
-          break;
-        case 'user-not-found':
-          message =
-              'इस Email से कोई खाता नहीं मिला। कृपया सही Email डालें या नया खाता बनाएं।';
-          break;
-        case 'user-disabled':
-          message =
-              'यह खाता निष्क्रिय (Disabled) कर दिया गया है। व्यवस्थापक से संपर्क करें।';
-          break;
-        case 'too-many-requests':
-          message =
-              'बहुत अधिक असफल प्रयास किए गए हैं। कृपया कुछ समय बाद पुनः प्रयास करें।';
-          break;
-        case 'operation-not-allowed':
-          message =
-              'Firebase में Email/Password लॉगिन सेवा सक्षम नहीं है। व्यवस्थापक से संपर्क करें।';
-          break;
-        case 'network-request-failed':
-          message =
-              'इंटरनेट कनेक्शन में समस्या है या सर्वर से संपर्क नहीं हो सका। कृपया नेटवर्क जांचें।';
-          break;
-        case 'invalid-email':
-          message = 'अमान्य Email पता दर्ज किया गया है (Invalid email)।';
-          break;
-        case 'email-already-in-use':
-          message =
-              'यह Email पहले से पंजीकृत है। कृपया लॉगिन करें या दूसरा Email उपयोग करें।';
-          break;
-        case 'weak-password':
-          message = 'Password बहुत कमजोर है। कम से कम 6 अक्षरों का उपयोग करें।';
-          break;
-        case 'requires-recent-login':
-          message = 'सत्र पुराना हो चुका है। कृपया दोबारा लॉगिन करें।';
-          break;
-        default:
-          message = error.message != null && error.message!.trim().isNotEmpty
-              ? error.message!.trim()
-              : FirebaseBackend.userFriendlyAuthError(error);
-      }
-      _showMessage(message);
-    } on FirebaseException catch (error) {
-      if (!signInCompleted) {
-        debugPrint(
-          '[SIGNIN_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, code: ${error.code}, message: ${error.message}',
-        );
-      } else {
-        debugPrint(
-          '[PROFILE_LOAD_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, code: ${error.code}, message: ${error.message}',
-        );
-      }
-      debugPrint('LOGIN: Exception $error');
       _showMessage(FirebaseBackend.userFriendlyAuthError(error));
     } on TimeoutException catch (error) {
-      if (!signInCompleted) {
-        debugPrint(
-          '[SIGNIN_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, Timeout: ${error.message}',
-        );
-      } else {
-        debugPrint(
-          '[PROFILE_LOAD_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, Timeout: ${error.message}',
-        );
+      if (kDebugMode) {
+        debugPrint('AuthScreen: TimeoutException: ${error.message}');
       }
-      debugPrint('LOGIN: Exception $error');
-      _showMessage(
-        error.message ??
-            'अनुरोध का समय समाप्त हो गया (Timeout)। कृपया पुनः प्रयास करें।',
-      );
+      _showMessage(error.message ?? 'The request timed out. Please try again.');
     } on SocketException {
-      if (!signInCompleted) {
-        debugPrint(
-          '[SIGNIN_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, SocketException',
-        );
-      } else {
-        debugPrint(
-          '[PROFILE_LOAD_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, SocketException',
-        );
+      if (kDebugMode) {
+        debugPrint('AuthScreen: network error during auth request');
       }
-      debugPrint('LOGIN: Exception SocketException');
       _showMessage(
         FirebaseBackend.userFriendlyAuthError(
           const SocketException('Network error'),
         ),
       );
     } on StateError catch (error) {
-      if (!signInCompleted) {
-        debugPrint(
-          '[SIGNIN_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, StateError: ${error.message}',
-        );
-      } else {
-        debugPrint(
-          '[PROFILE_LOAD_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, StateError: ${error.message}',
-        );
+      if (kDebugMode) {
+        debugPrint('AuthScreen: StateError: ${error.message}');
       }
-      debugPrint('LOGIN: Exception $error');
       _showMessage(FirebaseBackend.userFriendlyAuthError(error));
     } catch (error) {
-      if (!signInCompleted) {
-        debugPrint(
-          '[SIGNIN_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, error: $error',
-        );
-      } else {
-        debugPrint(
-          '[PROFILE_LOAD_ERROR] elapsed: ${stopwatch.elapsedMilliseconds}ms, error: $error',
-        );
+      if (kDebugMode) {
+        debugPrint('AuthScreen: unexpected auth error: $error');
       }
-      debugPrint('LOGIN: Exception $error');
       _showMessage(FirebaseBackend.userFriendlyAuthError(error));
     } finally {
       if (mounted) {
@@ -470,100 +310,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             height: 1.5,
                           ),
                         ),
-                        const SizedBox(height: 18),
-                        const Text(
-                          'लॉगिन प्रकार चुनें (Select Login Portal)',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: BrandConfig.ink,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _RoleSelectCard(
-                                label: 'Admin Login',
-                                sublabel: 'व्यवस्थापक',
-                                icon: Icons.admin_panel_settings_outlined,
-                                isSelected:
-                                    _selectedLoginRole == UserRole.admin,
-                                color: BrandConfig.primary,
-                                onTap: () => setState(
-                                  () => _selectedLoginRole = UserRole.admin,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _RoleSelectCard(
-                                label: 'Staff Login',
-                                sublabel: 'कर्मचारी',
-                                icon: Icons.badge_outlined,
-                                isSelected:
-                                    _selectedLoginRole == UserRole.staff,
-                                color: const Color(0xFFC97A2E),
-                                onTap: () => setState(
-                                  () => _selectedLoginRole = UserRole.staff,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _RoleSelectCard(
-                                label: 'User Login',
-                                sublabel: 'श्रद्धालु',
-                                icon: Icons.person_outline_rounded,
-                                isSelected: _selectedLoginRole == UserRole.user,
-                                color: const Color(0xFF2C6BB3),
-                                onTap: () => setState(
-                                  () => _selectedLoginRole = UserRole.user,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _getRoleColor(
-                              _selectedLoginRole,
-                            ).withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _getRoleColor(
-                                _selectedLoginRole,
-                              ).withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline_rounded,
-                                size: 15,
-                                color: _getRoleColor(_selectedLoginRole),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _getRoleHelpText(_selectedLoginRole),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: _getRoleColor(_selectedLoginRole),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 22),
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
@@ -719,92 +466,6 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Color _getRoleColor(UserRole role) {
-    return switch (role) {
-      UserRole.admin => BrandConfig.primary,
-      UserRole.staff => const Color(0xFFC97A2E),
-      UserRole.user => const Color(0xFF2C6BB3),
-    };
-  }
-
-  String _getRoleHelpText(UserRole role) {
-    return switch (role) {
-      UserRole.admin =>
-        'व्यवस्थापक (Admin) पोर्टल — सम्पूर्ण प्रशासनिक नियंत्रण एवं सेटिंग्स',
-      UserRole.staff =>
-        'कर्मचारी (Staff) पोर्टल — दैनिक गौसेवा, चारा वितरण व पशु रिकॉर्ड',
-      UserRole.user =>
-        'श्रद्धालु (User) पोर्टल — ऑनलाइन गौ-सेवा दान, दर्शन व सामान्य जानकारी',
-    };
-  }
-}
-
-class _RoleSelectCard extends StatelessWidget {
-  const _RoleSelectCard({
-    required this.label,
-    required this.sublabel,
-    required this.icon,
-    required this.isSelected,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String label;
-  final String sublabel;
-  final IconData icon;
-  final bool isSelected;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? color.withValues(alpha: 0.09)
-              : const Color(0xFFF7FAF6),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected ? color : const Color(0xFFE0E7DE),
-            width: isSelected ? 1.8 : 1.0,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 22, color: isSelected ? color : BrandConfig.muted),
-            const SizedBox(height: 5),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? color : BrandConfig.ink,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              sublabel,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? color : BrandConfig.muted,
-              ),
-            ),
-          ],
         ),
       ),
     );
