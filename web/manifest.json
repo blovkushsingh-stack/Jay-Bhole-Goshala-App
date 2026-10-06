@@ -1,11 +1,11 @@
 {
-    "name": "jay_bhole_goshala",
-    "short_name": "jay_bhole_goshala",
+    "name": "Jay Bhole Goshala Samiti",
+    "short_name": "Jay Bhole Goshala",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F7F8F2",
+    "theme_color": "#2F6B45",
+    "description": "जय भोले गौशाला समिति - गौ सेवा • जीव सेवा • समाज सेवा",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

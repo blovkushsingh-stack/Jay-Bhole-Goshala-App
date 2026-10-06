@@ -17,7 +17,8 @@ class CowRecord {
     this.weight = '',
     this.vaccination = '',
     this.disease = '',
-    this.photoData,
+    String? photoUrl,
+    String? photoData,
     this.goshalaId = 'jay-bhole-goshala',
     this.isMilking = false,
     this.pregnancyStatus = 'गैर-गर्भवती',
@@ -26,6 +27,14 @@ class CowRecord {
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : status = status ?? health,
+       photoUrl = (photoUrl != null && photoUrl.trim().isNotEmpty)
+           ? photoUrl.trim()
+           : ((photoData != null &&
+                   (photoData.trim().startsWith('http://') ||
+                    photoData.trim().startsWith('https://')))
+               ? photoData.trim()
+               : null),
+       photoData = photoUrl ?? photoData,
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? DateTime.now();
 
@@ -44,6 +53,7 @@ class CowRecord {
   final String weight;
   final String vaccination;
   final String disease;
+  final String? photoUrl;
   final String? photoData;
   final String goshalaId;
   final bool isMilking;
@@ -68,6 +78,27 @@ class CowRecord {
     'लागू नहीं',
   ];
 
+  /// Generates a unique, readable Cow ID (e.g. COW-261002-12345)
+  static String generateCowId() {
+    final now = DateTime.now();
+    final year = now.year.toString().substring(2);
+    final month = now.month.toString().padLeft(2, '0');
+    final day = now.day.toString().padLeft(2, '0');
+    final suffix = (now.millisecondsSinceEpoch % 100000).toString().padLeft(5, '0');
+    return 'COW-$year$month$day-$suffix';
+  }
+
+  /// Public web base URL for Cow Biodata
+  static const String publicBiodataBaseUrl =
+      'https://jay-bhole-goshala-samiti.web.app/cow';
+
+  /// Builds a public biodata web URL for any given Cow ID
+  static String buildPublicBiodataUrl(String cowId) =>
+      '$publicBiodataBaseUrl?id=${Uri.encodeComponent(cowId)}';
+
+  /// Returns the public biodata URL for this cow
+  String get publicBiodataUrl => buildPublicBiodataUrl(id);
+
   String get statusLabel => status.isEmpty ? health : status;
 
   CowRecord copyWith({
@@ -86,6 +117,7 @@ class CowRecord {
     String? weight,
     String? vaccination,
     String? disease,
+    String? photoUrl,
     String? photoData,
     String? goshalaId,
     bool? isMilking,
@@ -111,6 +143,7 @@ class CowRecord {
       weight: weight ?? this.weight,
       vaccination: vaccination ?? this.vaccination,
       disease: disease ?? this.disease,
+      photoUrl: photoUrl ?? this.photoUrl,
       photoData: photoData ?? this.photoData,
       goshalaId: goshalaId ?? this.goshalaId,
       isMilking: isMilking ?? this.isMilking,
@@ -138,7 +171,7 @@ class CowRecord {
     'weight': weight,
     'vaccination': vaccination,
     'disease': disease,
-    'photoData': photoData,
+    'photoUrl': photoUrl,
     'goshalaId': goshalaId,
     'isMilking': isMilking,
     'pregnancyStatus': pregnancyStatus,
@@ -159,9 +192,27 @@ class CowRecord {
     final pregStatus = _stringValue(json['pregnancyStatus']);
     final fallbackPreg = statusValue == 'गर्भवती' ? 'गर्भवती' : 'गैर-गर्भवती';
 
+    final parsedId = _stringValue(json['id']).isNotEmpty
+        ? _stringValue(json['id'])
+        : generateCowId();
+    final parsedTag = _stringValue(json['tag']).isNotEmpty
+        ? _stringValue(json['tag'])
+        : parsedId;
+
+    final rawUrl = json['photoUrl'] as String?;
+    final rawData = json['photoData'] as String?;
+    String? resolvedUrl;
+    if (rawUrl != null && rawUrl.trim().isNotEmpty) {
+      resolvedUrl = rawUrl.trim();
+    } else if (rawData != null &&
+        (rawData.trim().startsWith('http://') ||
+            rawData.trim().startsWith('https://'))) {
+      resolvedUrl = rawData.trim();
+    }
+
     return CowRecord(
-      id: _stringValue(json['id']),
-      tag: _stringValue(json['tag']),
+      id: parsedId,
+      tag: parsedTag,
       name: _stringValue(json['name']),
       age: _intValue(json['age']),
       breed: _stringValue(json['breed']),
@@ -175,7 +226,8 @@ class CowRecord {
       weight: _stringValue(json['weight']),
       vaccination: _stringValue(json['vaccination']),
       disease: _stringValue(json['disease']),
-      photoData: json['photoData'] as String?,
+      photoUrl: resolvedUrl,
+      photoData: resolvedUrl ?? (rawData != null && rawData.length < 500 ? rawData : null),
       goshalaId: _stringValue(json['goshalaId']).isNotEmpty
           ? _stringValue(json['goshalaId'])
           : 'jay-bhole-goshala',

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../branding/brand_config.dart';
 
@@ -19,7 +18,15 @@ class BrandLogo extends StatelessWidget {
         color: BrandConfig.leaf,
         shape: BoxShape.circle,
       ),
-      child: SvgPicture.asset(BrandConfig.logoAsset),
+      child: ClipOval(
+        child: Image.asset(
+          BrandConfig.logoAsset,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.medium,
+          errorBuilder: (context, error, stackTrace) =>
+              const Icon(Icons.pets_rounded, color: BrandConfig.primary),
+        ),
+      ),
     );
     if (!showName) return mark;
     return Row(

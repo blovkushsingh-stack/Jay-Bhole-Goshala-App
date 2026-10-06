@@ -1,3 +1,6 @@
+# Allow compatibility with older subprojects (such as Firebase C++ SDK requesting CMake < 3.5) on CMake 4.x
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Minimum policy version for subprojects" FORCE)
+
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
 project(jay_bhole_goshala LANGUAGES CXX)

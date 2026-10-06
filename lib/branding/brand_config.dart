@@ -11,8 +11,11 @@ class BrandConfig {
   static const phone = 'जानकारी जल्द जोड़ी जाएगी';
   static const whatsapp = 'जानकारी जल्द जोड़ी जाएगी';
   static const upi = 'जानकारी जल्द जोड़ी जाएगी';
+  static const defaultUpiId = 'jaybholegoshala@upi';
+  static String get effectiveUpiId =>
+      (upi.isNotEmpty && !upi.contains('जल्द')) ? upi : defaultUpiId;
   static const registrationNumber = 'जानकारी जल्द जोड़ी जाएगी';
-  static const logoAsset = 'assets/logo/brand_placeholder.svg';
+  static const logoAsset = 'assets/logo/jay_bhole_logo.png';
 
   static const primary = Color(0xFF2F6B45);
   static const secondary = Color(0xFF1F4F34);

@@ -1,1 +1,46 @@
-{"firestore":{"rules":"firestore.rules"},"storage":{"rules":"storage.rules"},"flutter":{"platforms":{"android":{"default":{"projectId":"jay-bhole-goshala-samiti","appId":"1:571358755927:android:6bf13ad0ce252aa66df712","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"jay-bhole-goshala-samiti","configurations":{"android":"1:571358755927:android:6bf13ad0ce252aa66df712","ios":"1:571358755927:ios:0eb34640f58a37ca6df712","macos":"1:571358755927:ios:0eb34640f58a37ca6df712","web":"1:571358755927:web:5c9a8ceefa3e70426df712","windows":"1:571358755927:web:122f789c399aad396df712"}}}}}}
+{
+    "hosting": {
+        "site": "jay-bhole-goshala-samiti",
+        "public": "build/web",
+        "ignore": [
+            "firebase.json",
+            "**/.*",
+            "**/node_modules/**"
+        ],
+        "rewrites": [
+            {
+                "source": "**",
+                "destination": "/index.html"
+            }
+        ]
+    },
+    "firestore": {
+        "rules": "firestore.rules"
+    },
+    "storage": {
+        "rules": "storage.rules"
+    },
+    "flutter": {
+        "platforms": {
+            "android": {
+                "default": {
+                    "projectId": "jay-bhole-goshala-samiti",
+                    "appId": "1:571358755927:android:6bf13ad0ce252aa66df712",
+                    "fileOutput": "android/app/google-services.json"
+                }
+            },
+            "dart": {
+                "lib/firebase_options.dart": {
+                    "projectId": "jay-bhole-goshala-samiti",
+                    "configurations": {
+                        "android": "1:571358755927:android:6bf13ad0ce252aa66df712",
+                        "ios": "1:571358755927:ios:0eb34640f58a37ca6df712",
+                        "macos": "1:571358755927:ios:0eb34640f58a37ca6df712",
+                        "web": "1:571358755927:web:5c9a8ceefa3e70426df712",
+                        "windows": "1:571358755927:web:122f789c399aad396df712"
+                    }
+                }
+            }
+        }
+    }
+}

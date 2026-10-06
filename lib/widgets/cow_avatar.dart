@@ -15,14 +15,22 @@ class CowAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final data = cow.photoData;
-    MemoryImage? image;
+    final photo = cow.photoUrl ?? cow.photoData;
+    ImageProvider? image;
 
-    if (data != null && data.trim().isNotEmpty) {
-      try {
-        image = MemoryImage(base64Decode(data));
-      } catch (_) {
-        image = null;
+    if (photo != null && photo.trim().isNotEmpty) {
+      final trimmed = photo.trim();
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        image = NetworkImage(trimmed);
+      } else if (trimmed.length < 500000) {
+        try {
+          final cleanBase64 = trimmed
+              .replaceFirst(RegExp(r'^data:image\/[a-zA-Z0-9]+;base64,'), '')
+              .replaceAll(RegExp(r'\s+'), '');
+          image = MemoryImage(base64Decode(cleanBase64));
+        } catch (_) {
+          image = null;
+        }
       }
     }
 

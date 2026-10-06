@@ -19,9 +19,25 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final records = jsonDecode(raw) as List<dynamic>;
-      return records
-          .map((item) => CowRecord.fromJson(item as Map<String, dynamic>))
-          .toList();
+      bool needsResave = false;
+      final cows = <CowRecord>[];
+      for (final item in records) {
+        if (item is Map<String, dynamic>) {
+          final photoData = item['photoData'];
+          // If legacy photoData contains a huge Base64 string, strip it from local cache
+          if (photoData is String &&
+              !photoData.startsWith('http://') &&
+              !photoData.startsWith('https://')) {
+            item['photoData'] = null;
+            needsResave = true;
+          }
+          cows.add(CowRecord.fromJson(item));
+        }
+      }
+      if (needsResave) {
+        saveCows(cows);
+      }
+      return cows;
     } on FormatException {
       return [];
     } on TypeError {
